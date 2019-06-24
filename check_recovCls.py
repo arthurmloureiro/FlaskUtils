@@ -164,7 +164,7 @@ def get_nside(config):
         
     
     
-def plot_recov_vs_input(recovcls, inputcls, outputFolder):
+def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
     """
     Plots all of the input cls compared with the recov ones
     Plots also the relative % error between them
@@ -186,7 +186,7 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
     # checking if pixwin function was applied:
     if search_flask_args(config, "APPLY_PIXWIN") == '1':
         import healpy as hp
-        print("Flask simulation using pixel window function. Will apply corrections...")
+        print("\nFlask simulation using pixel window function. Will apply corrections...")
         nside = get_nside(config)
         pixWin2 = (hp.pixwin(nside)[int(ell_min):(int(ell_max) + 1)])**2
     else:
@@ -197,7 +197,7 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
         if k != 'l':
             splRecov = intp(recovcls['l'], recovcls[k])
             splInput = intp(inputcls['l'], inputcls[k])
-            
+            print("Plotting ", k, "...\n")
             fig = plt.figure()
             gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
             plt.subplot(gs[0])
@@ -217,18 +217,23 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
             plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
             plt.axhline(0, ls='--', lw=2.0)
             
-            
-            plt.show()
+            figname = "/recovError-" + k + ".pdf"
+            plt.savefig(outputFolder + figname, dpi=300, format="pdf", bbox_inches = 'tight')
+            if display == True:
+                plt.show()
     
     return None
 
-def main(config):
+def main(config, display = False):
     """
     Main part of the script
     """
     
     # uncomment the following line if you have no display access
-    #plt.switch_backend('agg')
+    if display == False:
+        plt.switch_backend('agg')
+    else:
+        None
     
     assert os.path.isfile(config), "Cannot find the config file!"
     
@@ -240,7 +245,7 @@ def main(config):
     
     inputClsDict =  get_input_cls_dict(config, recovClsDict) #FIXME: RECOV CLS FORMAT DON'T MACH THIS LIST!
     
-    plot_recov_vs_input(recovClsDict, inputClsDict, outputFolder)
+    plot_recov_vs_input(recovClsDict, inputClsDict, outputFolder, display)
     # print(recovClsDict.keys())
     # print("\n")
     # print(inputClsDict.keys())
