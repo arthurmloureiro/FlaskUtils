@@ -55,7 +55,7 @@ def search_flask_args(pathFlaskFile, argName):
         for line in search:
             #line = line.rstrip().replace(" ", "")
             if argName in line: #FIXME: need to find exact match!
-                args = line.split(':')[1].rstrip().replace(" ", "")
+                args = line.split(':')[1].rstrip().replace(" ", "").replace("\t", "").split('#')[0]
                 break # since I can't find a way to find exact match
     
     if args[0]=='0':
@@ -154,11 +154,22 @@ def check_ell_range(recovcls, inputcls):
         print("\nRecov: ", recovcls['l'].min(), " ", recovcls['l'].max())
         print("\nInput: ", inputcls['l'].min(), " ", inputcls['l'].max())
         return False
+
+def get_nside(config):
+    """
+    returns the nside
+    """
+    return int(search_flask_args(config, "NSIDE"))
+        
+        
+    
     
 def plot_recov_vs_input(recovcls, inputcls, outputFolder):
     """
     Plots all of the input cls compared with the recov ones
     Plots also the relative % error between them
+    
+    FIXME: PIXEL WINDOW FUNCTION!
     """
     
     if check_ell_range(recovcls,inputcls) == False:
@@ -171,6 +182,15 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
     
     ell_vec = np.arange(ell_min, ell_max + 1)
     fact = ell_vec*(ell_vec + 1)
+    
+    # checking if pixwin function was applied:
+    if search_flask_args(config, "APPLY_PIXWIN") == '1':
+        import healpy as hp
+        print("Flask simulation using pixel window function. Will apply corrections...")
+        nside = get_nside(config)
+        pixWin2 = (hp.pixwin(nside)[int(ell_min):(int(ell_max) + 1)])**2
+    else:
+        pixWin2 = np.ones_like(ell_vec)
     
     for k in recovcls.keys():
         #interpolates both functions because that's what we have:
@@ -185,7 +205,7 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
             plt.loglog()
             plt.ylabel(r"$\ell(\ell +1)C_{\ell}$")
             plt.xlabel(r"$\ell$")
-            plt.plot(ell_vec, fact*splRecov(ell_vec), label="Recov")
+            plt.plot(ell_vec, fact*splRecov(ell_vec)/pixWin2, label="Recov")
             plt.plot(ell_vec, fact*splInput(ell_vec), label="Input")
             plt.legend(loc=0)
             
@@ -194,7 +214,7 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder):
             plt.xlabel(r"$\ell$")
             #plt.xscale('log')
             plt.ylim(-15,15)
-            plt.plot(ell_vec, (splInput(ell_vec) / splRecov(ell_vec) - 1)*100, label="frac error")
+            plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
             plt.axhline(0, ls='--', lw=2.0)
             
             
