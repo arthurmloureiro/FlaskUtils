@@ -26,7 +26,7 @@ def create_output_folder(config):
     pathtoConfig = os.path.dirname(config)
     rootName = os.path.splitext(os.path.basename(config))[0]
     
-    newFolderName = "/check_RecovCls-"+rootName
+    newFolderName = "/Check_RecovCls-" + rootName
     newFolder = os.path.join(pathtoConfig, newFolderName)
     
     if os.path.isdir(newFolder) == True:
@@ -161,7 +161,27 @@ def get_nside(config):
     """
     return int(search_flask_args(config, "NSIDE"))
         
+def bin_cls(ell, cls, delta_ell):
+    """
+    bin the cls in C_b = \sum (2*l +1) C_l / \sum (2*l +1)
+    """
+    
+    ell_bin = np.zeros(int(len(ell)/delta_ell))
+    cls_bin = np.zeros_like(ell_bin)
+    var_bin = np.zeros_like(ell_bin)
+    
+    for j in range(len(ell_bin)):
+        lmin = j*delta_ell
+        lmax = (j + 1)*delta_ell
+        ell_range = ell[lmin : lmax]
         
+        ellFac = (2*ell_range + 1)
+        
+        ell_bin[j] = np.sum(ell_range)/delta_ell
+        cls_bin[j] = np.sum(ellFac*cls[lmin:lmax])/np.sum(ellFac)
+        var_bin[j] = np.std(cls[lmin:lmax])
+        
+    return ell_bin, cls_bin, var_bin    
     
     
 def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
@@ -197,6 +217,10 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
         if k != 'l':
             splRecov = intp(recovcls['l'], recovcls[k])
             splInput = intp(inputcls['l'], inputcls[k])
+            
+            RecBinEll, RecBinCl, RecBinVar = bin_cls(ell_vec, splRecov(ell_vec)/pixWin2, 12)
+            factBin = RecBinEll*(RecBinEll + 1)
+            
             print("Plotting ", k, "...\n")
             fig = plt.figure()
             gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
@@ -205,7 +229,8 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
             plt.loglog()
             plt.ylabel(r"$\ell(\ell +1)C_{\ell}$")
             plt.xlabel(r"$\ell$")
-            plt.plot(ell_vec, fact*splRecov(ell_vec)/pixWin2, label="Recov")
+            #plt.plot(ell_vec, fact*splRecov(ell_vec)/pixWin2, label="Recov")
+            plt.errorbar(RecBinEll, factBin*RecBinCl, yerr=factBin*RecBinVar, fmt='.', label="Recov ($\Delta\ell =12$)")
             plt.plot(ell_vec, fact*splInput(ell_vec), label="Input")
             plt.legend(loc=0)
             
@@ -214,8 +239,13 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
             plt.xlabel(r"$\ell$")
             #plt.xscale('log')
             plt.ylim(-15,15)
-            plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
+            
+            ErrBinEll, ErrBinCl, ErrBinVar = bin_cls(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, 20)
+            plt.errorbar(ErrBinEll, ErrBinCl, yerr=ErrBinVar, fmt='.', label="frac error")
+            #plt.errorbar(RecBinEll, (splInput(RecBinEll) / RecBinCl - 1)*100, yerr=RecBinVar*100, fmt='.', label="Recov ($\Delta\ell =12$)")
+            #plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
             plt.axhline(0, ls='--', lw=2.0)
+            plt.legend(loc=0)
             
             figname = "/recovError-" + k + ".pdf"
             plt.savefig(outputFolder + figname, dpi=300, format="pdf", bbox_inches = 'tight')
@@ -253,7 +283,7 @@ def main(config, display = False):
     
 if __name__=='__main__':
     if sys.argv[1:] == ["-h"]:
-        print("USAGE: ./check_recovCls.py </path/to/flask.config> \nPlots Flask RecovCls compared to the input theory. \nPlots can be found in a new folder called 'check_RecovCls-<configname>' in the same directory as the .config.")
+        print("USAGE: ./check_recovCls.py </path/to/flask.config> \nPlots Flask RecovCls compared to the input theory. \nPlots can be found in a new folder called 'Check_RecovCls-<configname>' in the same directory as the .config.")
         sys.exit(-1)
     else:
         config = sys.argv[1]
