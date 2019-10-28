@@ -14,6 +14,7 @@ import os
 import glob
 from scipy.interpolate import InterpolatedUnivariateSpline as intp
 from matplotlib import gridspec
+import shutil as shu
 
 
 def create_output_folder(config):
@@ -60,7 +61,7 @@ def search_flask_args(pathFlaskFile, argName):
     
     if args[0]=='0':
         print("Argument not given to flask!")
-        return None
+        return 0
     else:
         return args
 
@@ -80,7 +81,7 @@ def get_recov_cls_dict(config):
     
     recovClsPathFromConfig = search_flask_args(config, "RECOVCLS_OUT")
     
-    if recovClsPathFromConfig is None:
+    if recovClsPathFromConfig is 0:
         print("No recovCls were calculated by Flask. \nDiagnosis cannot be performed!\nExiting the script...")
         sys.exit(-1)
     else:
@@ -108,16 +109,54 @@ def get_recov_cls_dict(config):
         
     return DictRecovCls
 
+def checkDens2Kappa(config):
+    """
+    checks if density2kappa was used.
+    """
+    
+    return bool(search_flask_args(config, "DENS2KAPPA"))
 
-def get_input_cls_dict(config, RecovDict):
+def copy_inputs(config, kappaPath):
+    """
+    if dens2kappa used, copies the original density cls to the kappa LoS folder
+    with the same root name if needed.
+    """
+    
+    inputClsPath = search_flask_args(config, "CL_PREFIX")
+    configDirName = get_config_path(config)
+    
+    print(" >> Copying input density Cls to Kappa Folder!")
+    if inputClsPath is 0:
+        print("No input cls in the Flask config! \nDiagnosis cannot be performed!\nExiting the script...")
+        sys.exit(-1)
+    else:
+        #check if the path is absolute:
+        if inputClsPath[0] == '/':
+            inputClsPath = inputClsPath
+        else:
+            inputClsPath = os.path.join(configDirName, inputClsPath)
+        inputFiles = glob.glob(inputClsPath + "*.dat")
+        print(inputClsPath)
+        for f in inputFiles:
+            sufix = f.split(inputClsPath)[1]
+            print("Copying ", f, " to ", kappaPath + sufix)
+            shu.copy2(f, kappaPath + sufix)
+    
+def get_input_cls_dict(config, RecovDict, kappaPath=None):
     """
     recovers just the list of files!
     """
     configDirName = get_config_path(config)
     
-    ClsPath = search_flask_args(config, "CL_PREFIX")
+    if kappaPath is None:
+        ClsPath = search_flask_args(config, "CL_PREFIX")
+    else:
+        print("TRANSFERING DENSITY CLS TO KAPPA FOLDER!")
+        ClsPath = kappaPath
+        copy_inputs(config, kappaPath)
+        #sys.exit(-1)
     
-    if ClsPath is None:
+    if ClsPath is 0:
         print("No input cls in the Flask config! \nDiagnosis cannot be performed!\nExiting the script...")
         sys.exit(-1)
     else:
@@ -183,6 +222,30 @@ def bin_cls(ell, cls, delta_ell):
         
     return ell_bin, cls_bin, var_bin    
     
+def Dens2KappaUsed(config, recovClsDict):
+    """
+    In case Dens2Kappa was used, asks the user if Cls where Calculated,
+    if not, it calculates it for the user.
+    """
+    print("Dens2Kappa used in the .config! Need to calculate Kappa-Cls to compare with.")
+    UserAnswer1 = input("Have you previously calculated the K-Cls using Dens2KappaCls? [Y/N] ").upper()
+    
+    if UserAnswer1 == "Y":
+        pathToKappaCls = input("Please provide the path to the Kappa Cls and their root name: ")
+        
+        # check if there are files in the kappa folder:
+        kappaClsFiles = glob.glob(pathToKappaCls + "*.dat")
+        
+        assert len(kappaClsFiles) != 0, "No Kappa-Cls found in the directory!"
+        
+        return get_input_cls_dict(config, recovClsDict, kappaPath=pathToKappaCls)
+        
+    elif UserAnswer1 == "N":
+        print("Please calculate them with Dens2KappaCls!") #FIXME calculate automatically instead
+        sys.exit(-1)
+    else:
+        print("option not recognised!")
+        sys.exit(-1)
     
 def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
     """
@@ -216,41 +279,47 @@ def plot_recov_vs_input(recovcls, inputcls, outputFolder, display):
         #interpolates both functions because that's what we have:
         if k != 'l':
             splRecov = intp(recovcls['l'], recovcls[k])
-            splInput = intp(inputcls['l'], inputcls[k])
+            try:
+                splInput = intp(inputcls['l'], inputcls[k])
+                plotOk = True
+            except KeyError:
+                plotOk = False
             
-            RecBinEll, RecBinCl, RecBinVar = bin_cls(ell_vec, splRecov(ell_vec)/pixWin2, 12)
-            factBin = RecBinEll*(RecBinEll + 1)
-            
-            print("Plotting ", k, "...\n")
-            fig = plt.figure()
-            gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
-            plt.subplot(gs[0])
-            plt.title(k + "\n(f1 = Pos; f2 = shear)")
-            plt.loglog()
-            plt.ylabel(r"$\ell(\ell +1)C_{\ell}$")
-            plt.xlabel(r"$\ell$")
-            #plt.plot(ell_vec, fact*splRecov(ell_vec)/pixWin2, label="Recov")
-            plt.errorbar(RecBinEll, factBin*RecBinCl, yerr=factBin*RecBinVar, fmt='.', label="Recov ($\Delta\ell =12$)")
-            plt.plot(ell_vec, fact*splInput(ell_vec), label="Input")
-            plt.legend(loc=0)
-            
-            plt.subplot(gs[1])
-            plt.ylabel(r"Frac. Error $\%$")
-            plt.xlabel(r"$\ell$")
-            #plt.xscale('log')
-            plt.ylim(-15,15)
-            
-            ErrBinEll, ErrBinCl, ErrBinVar = bin_cls(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, 20)
-            plt.errorbar(ErrBinEll, ErrBinCl, yerr=ErrBinVar, fmt='.', label="frac error")
-            #plt.errorbar(RecBinEll, (splInput(RecBinEll) / RecBinCl - 1)*100, yerr=RecBinVar*100, fmt='.', label="Recov ($\Delta\ell =12$)")
-            #plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
-            plt.axhline(0, ls='--', lw=2.0)
-            plt.legend(loc=0)
-            
-            figname = "/recovError-" + k + ".pdf"
-            plt.savefig(outputFolder + figname, dpi=300, format="pdf", bbox_inches = 'tight')
-            if display == True:
-                plt.show()
+            if plotOk:
+                RecBinEll, RecBinCl, RecBinVar = bin_cls(ell_vec, splRecov(ell_vec)/pixWin2, 12)
+                factBin = RecBinEll*(RecBinEll + 1)
+
+                print("Plotting ", k, "...\n")
+                fig = plt.figure()
+                gs = gridspec.GridSpec(2, 1, height_ratios=[3, 1])
+                plt.subplot(gs[0])
+                plt.title(k + "\n(f1 = Pos; f2 = shear)")
+                plt.loglog()
+                plt.ylabel(r"$\ell(\ell +1)C_{\ell}$")
+                plt.xlabel(r"$\ell$")
+                #plt.plot(ell_vec, fact*splRecov(ell_vec)/pixWin2, label="Recov")
+                plt.errorbar(RecBinEll, factBin*RecBinCl, yerr=factBin*RecBinVar, fmt='.', label="Recov ($\Delta\ell =12$)")
+                plt.plot(ell_vec, fact*splInput(ell_vec), label="Input")
+                plt.legend(loc=0)
+
+                plt.subplot(gs[1])
+                plt.ylabel(r"Frac. Error $\%$")
+                plt.xlabel(r"$\ell$")
+                #plt.xscale('log')
+                plt.ylim(-15,15)
+
+                ErrBinEll, ErrBinCl, ErrBinVar = bin_cls(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, 20)
+                plt.errorbar(ErrBinEll, ErrBinCl, yerr=ErrBinVar, fmt='.', label="frac error")
+                #plt.errorbar(RecBinEll, (splInput(RecBinEll) / RecBinCl - 1)*100, yerr=RecBinVar*100, fmt='.', label="Recov ($\Delta\ell =12$)")
+                #plt.plot(ell_vec, (splInput(ell_vec) / (splRecov(ell_vec)/pixWin2) - 1)*100, label="frac error")
+                plt.axhline(0, ls='--', lw=2.0)
+                plt.legend(loc=0)
+
+                figname = "/recovError-" + k + ".pdf"
+                plt.savefig(outputFolder + figname, dpi=300, format="pdf", bbox_inches = 'tight')
+                if display == True:
+                    plt.show()
+                plt.close('all')
     
     return None
 
@@ -271,10 +340,13 @@ def main(config, display = False):
     # if it fails, creates in the current directory
     outputFolder = create_output_folder(config) 
     
-    recovClsDict = get_recov_cls_dict(config)
+    recovClsDict = get_recov_cls_dict(config) 
     
-    inputClsDict =  get_input_cls_dict(config, recovClsDict) #FIXME: RECOV CLS FORMAT DON'T MACH THIS LIST!
-    
+    if checkDens2Kappa(config) == False:
+        inputClsDict =  get_input_cls_dict(config, recovClsDict) 
+    else:
+        inputClsDict = Dens2KappaUsed(config, recovClsDict)
+        
     plot_recov_vs_input(recovClsDict, inputClsDict, outputFolder, display)
     # print(recovClsDict.keys())
     # print("\n")
