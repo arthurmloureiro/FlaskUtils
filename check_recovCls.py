@@ -1,9 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Plots the RecovCls and the relative error betweem theory and signal C(l)s
+USAGE:   check_recovCls.py  </path/to/flask.config>
+EXAMPLE: check_recovCls.py lexample.config
 
-Arthur Loureiro (UCL) - Jun/2019
+This script takes a flask configuration file and compares the input 
+theory Cls to the output recov-cls. The output for this script are plots
+in .pdf format outputed in the same folder as the .config 
+(or in the current directory if no permissions to write in such folder).
+
+If DENS2KAPPA was used, you need to run Dens2KappaCls first and point the code
+to the correct directory for these files.
+
+Plots show the recov cls, the input cls, and the relative error between them.
+
+
+FIXME: Issues with creating the output directory
+FIXME: Automate Dens2KappaCls calculation if not found.
+
+Written by Arthur Loureiro (arthur.loureiro.14@ucl.ac.uk) - Sept/2019
 """
 from __future__ import division, print_function
 import sys
