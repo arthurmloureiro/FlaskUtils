@@ -55,7 +55,9 @@ def search_flask_args(pathFlaskFile, argName):
     with open(pathFlaskFile) as search:
         for line in search:
             #line = line.rstrip().replace(" ", "")
+            line = line.split("#")[0]
             if argName in line: #FIXME: need to find exact match!
+                print(line)
                 args = line.split(':')[1].rstrip().replace(" ", "").replace("\t", "").split('#')[0]
                 break # since I can't find a way to find exact match
     
